@@ -1,5 +1,3 @@
 # Summary
 
-* [Introduction](./README.md)
-
-* [How to use](./HowToUse.md)
+* [初めての検証済み命令的プログラム](HimmelBlog.md)
