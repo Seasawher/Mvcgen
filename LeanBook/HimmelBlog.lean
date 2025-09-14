@@ -99,7 +99,7 @@ Lean におけるホーア三つ組の構文は
 open Std Do
 
 /-- `l.ExistsPair P` は、添字 `i` と `j` が存在して `i < j` かつ `P l[i] l[j]` が成り立つことを主張する。 -/
-structure ExistsPair {α : Type} (P : α → α → Prop) (l : List α) where
+structure List.ExistsPair {α : Type} (P : α → α → Prop) (l : List α) where
   not_pairwise : ¬l.Pairwise (¬P · ·)
 
 -- theorem pairsSumToZero_spec (l : List Int) :
