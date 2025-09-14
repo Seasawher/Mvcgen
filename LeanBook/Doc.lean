@@ -13,6 +13,7 @@ mvcgen への「Hello world」として、次の例では `mySum` がローカ�
 その際には、ループに対して不変条件 (invariant) を明示的に指定する必要があります。
 -/
 import Std.Tactic.Do
+import Lean
 
 -- mvcgen はまだ使用しないでというwarningを消す
 set_option mvcgen.warning false
@@ -97,5 +98,56 @@ theorem mySum_correct_traditional (l : Array Nat) : mySum l = l.sum := by
 * `Id` 以外のモナドにおける効果的（effectful）な計算。そのような計算は暗黙のモナディック文脈（状態・例外など）に影響を与え，その影響をループ不変条件に反映する必要がある。
 
 `mvcgen` は、これらの課題に対しても合理的な労力でスケールします。
+-/
+
+/-
+## control flow
+
+for ループと早期 `return` を組み合わせた別の例を考えてみましょう。
+`List.Nodup` は、与えられたリストが重複を含まないことを主張する述語であることを思い出してください。
+以下の例の関数 `nodup` は、この述語を判定します。
+-/
+
+/-- リストに重複がないか判定する。
+true なら重複がない。false なら重複がある。-/
+def nodup (l : List Int) : Bool := Id.run do
+  let mut seen : Std.HashSet Int := ∅
+  for x in l do
+    if x ∈ seen then
+      return false
+    seen := seen.insert x
+  return true
+
+theorem nodup_correct (l : List Int) : nodup l ↔ l.Nodup := by
+  generalize h : nodup l = r
+  apply Id.of_wp_run_eq h
+  mvcgen
+  case inv1 =>
+    exact Invariant.withEarlyReturn
+      -- 早期リターンしたとき
+      (onReturn := fun ret seen => ⌜ret = false ∧ ¬l.Nodup⌝)
+      -- 通常の帰納ステップ
+      (onContinue := fun xs seen => ⌜(∀ x, x ∈ seen ↔ x ∈ xs.prefix) ∧ xs.prefix.Nodup⌝)
+  all_goals mleave; grind
+
+/-
+最初の `mySum` 例と同様に、この証明も簡潔な構造を保っています。というのも、今回も `grind` と、`List.Nodup` をめぐる既存の枠組みに証明の大半を委ねているからです。
+したがって、違いは不変条件にあるだけです。
+ループに早期 `return` があるため、補助関数 `Invariant.withEarlyReturn` を使って不変条件を構成します。
+この関数によって、不変条件を次の三つの部分に分けて指定できます。
+
+* `onReturn ret seen` は、ループが値 `ret` を伴う早期 `return` によって抜けた後に成り立つべき性質です。
+  `nodup` の場合、返される唯一の値は `false` であり、そのとき `nodup` はリストに重複があると判定したことになります。
+
+* `onContinue xs seen` は、各反復で不変条件が保存されることを示す通常の帰納ステップです。
+  反復の状態はカーソル `xs` によって表現されます。
+  与えられた例では、集合 `seen` がこれまでのループ反復で現れたすべての要素を含み、かつこれまで重複がなかったことを主張します。
+
+
+`onExcept` は、ループが例外を投げたときに成り立つべき性質です。
+`Id` には例外がないため、ここは指定せずデフォルトを用います。
+（例外については後で議論します。）
+
+では、`mvcgen` を使わない直接的（かつ過度にゴルフされた）証明を次に示します：
 
 -/
