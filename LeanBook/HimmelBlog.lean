@@ -2,6 +2,9 @@
 
 > 元記事
 > [My first verified (imperative) program](https://markushimmel.de/blog/my-first-verified-imperative-program/)
+>
+> コード例
+> <https://github.com/leanprover/lean4/blob/master/tests/lean/run/pairsSumToZero.lean>
 
 次期 Lean 4.22 リリースで追加される多くの新機能のひとつに、命令的プログラムの性質を証明するための新しい検証基盤のプレビューがあります。
 この記事では、この機能を紹介し、簡単な例を通じてその可能性を示し、さらに類似のツールと比較してみます。
@@ -40,7 +43,7 @@ import Std.Data.HashSet.Lemmas
 open Std
 
 /-- 与えられた整数のリストに、足して0になるような異なる２つの要素があるか？を判定する -/
-def pairsSumToZero (l : List Int) : Id Bool := do
+def pairsSumToZero (l : List Int) : Bool := Id.run do
   let mut seen : HashSet Int := ∅
 
   for x in l do
@@ -102,5 +105,5 @@ open Std Do
 structure List.ExistsPair {α : Type} (P : α → α → Prop) (l : List α) where
   not_pairwise : ¬l.Pairwise (¬P · ·)
 
--- theorem pairsSumToZero_spec (l : List Int) :
---   ⦃⌜True⌝⦄ pairsSumToZero l ⦃⇓r => r = true ↔ l.ExistsPair (fun a b => a + b = 0)⦄ := by sorry
+theorem pairsSumToZero_correct (l : List Int) : pairsSumToZero l ↔ l.ExistsPair (fun a b => a + b = 0) := by
+  sorry
