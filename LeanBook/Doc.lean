@@ -149,5 +149,41 @@ theorem nodup_correct (l : List Int) : nodup l ↔ l.Nodup := by
 （例外については後で議論します。）
 
 では、`mvcgen` を使わない直接的（かつ過度にゴルフされた）証明を次に示します：
+-/
+
+theorem nodup_correct_directly (l : List Int) : nodup l ↔ l.Nodup := by
+  rw [nodup]
+  generalize hseen : (∅ : Std.HashSet Int) = seen
+  change ?lhs ↔ l.Nodup
+  suffices h : ?lhs ↔ l.Nodup ∧ ∀ x ∈ l, x ∉ seen by grind
+  clear hseen
+  induction l generalizing seen with grind [Id.run_pure, Id.run_bind]
+
+/-
+いくつか所見が得られます：
+
+* この証明は、`mvcgen` を用いたものよりさらに短い。
+* `generalize` を使ってアキュムレータを一般化する方法は、一般化の対象となる `∅` の出現箇所がちょうど1つであることに依存している。
+  もしそうでなければ、証明の中にプログラムの一部を持ち込まざるを得ず、これは大きな関数に対しては現実的ではない。
+* 適切な補題が与えられていれば、`grind` は関数の制御フローに沿って分割し、`Id` について推論してくれる。
+  これは `Id.run_pure` や `Id.run_bind` には効くが、たとえば `Id.run_seq` には効かない。
+  というのも、その補題は E-matchable ではないからだ。
+  `grind` が失敗する場合は、`grind` が再び拾えるところまで、制御フローの分割やモナディックな推論をすべて手作業で行わざるを得ない。
+
+証明対象の定義の制御フローを複製せずに済ませる通常の方法は、`fun_cases` や `fun_induction` タクティクを用いることです。
+しかし残念ながら、例えば `forIn` の適用内部にある制御フローについては、`fun_cases` は助けになりません。
+
+これは mvcgen と対照的です。mvcgen には多くの `forIn` 実装のサポートが同梱されており、カスタムの `forIn` 実装についても `@[spec]` アノテーションを付けるだけで容易に拡張できます。
+さらに、mvcgen による証明では、元のプログラムの一部をコピーしなければならない状況は決して発生しません。
+-/
+
+/-
+## Hoare 三つ組を用いた副作用を持つプログラムに対する合成的推論
+
+これまでの例では、`Id.run do <prog>` を使って定義された関数について推論し、`<prog>` 内でのローカルな可変性や早期リターンを利用してきた。
+しかし、実際のプログラムでは、状態や失敗条件を暗黙の「効果」として隠蔽するために、しばしば `do` 記法とモナド `M` が使われる。
+この場合、関数は通常 `M.run` を省略し、代わりにモナディックな戻り値型 `M α` を持ち、その型を持つ他の関数とよく合成できるようになっている。
+
+以下は、自動インクリメントのカウンタ値を返す状態付き関数 `mkFresh` を用いた例です。
 
 -/
