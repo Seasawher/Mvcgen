@@ -185,5 +185,75 @@ theorem nodup_correct_directly (l : List Int) : nodup l ↔ l.Nodup := by
 この場合、関数は通常 `M.run` を省略し、代わりにモナディックな戻り値型 `M α` を持ち、その型を持つ他の関数とよく合成できるようになっている。
 
 以下は、自動インクリメントのカウンタ値を返す状態付き関数 `mkFresh` を用いた例です。
+-/
 
+structure Supply where
+  counter : Nat
+
+def mkFresh : StateM Supply Nat := do
+  let n ← (·.counter) <$> get
+  modify (fun s => {s with counter := s.counter + 1})
+  pure n
+
+def mkFreshN (n : Nat) : StateM Supply (List Nat) := do
+  let mut acc := #[]
+  for _ in [:n] do
+    acc := acc.push (← mkFresh)
+  pure acc.toList
+
+/-
+`mkFreshN n` は、`mkFresh` を通じて内部の Supply 状態を変更しながら、n 個の「新しい」数を返します。
+ここで「新しい」とは、これまでに生成された数のすべてが、次に生成される数と異なることを意味します。
+この正しさの性質を、`List.Nodup` を用いて `mkFreshN_correct` として定式化し、証明することができます。
+-/
+
+theorem mkFreshN_correct {s : Supply} (n : Nat) : ((mkFreshN n).run' s).Nodup := by
+  -- `(mkFreshN n).run' s` に注目する
+  generalize h : (mkFreshN n).run' s = x
+  apply StateM.of_wp_run'_eq h
+  -- モナディックなプログラム `mkFresh n` について述べる
+  -- `mvcgen` への `mkFreshN` と `mkFresh` の引数は内部の `simp` 集合に追加され、
+  -- `mvcgen` がこれらの定義を展開するようにする
+  mvcgen [mkFreshN, mkFresh]
+  -- 不変条件：カウンタは蓄積済みのあらゆる数より大きく、
+  --         かつ蓄積済みの数はすべて相異なる
+  -- この不変条件は引数 `state : Supply` を通じて状態を参照することができる
+  -- 次に蓄積する数はカウンタであるため、蓄積済みのすべての数と異なる
+  case inv1 => exact ⇓⟨xs, acc⟩ state => ⌜(∀ x ∈ acc, x < state.counter) ∧ acc.toList.Nodup⌝
+  all_goals mleave; grind
+
+/- ### 仕様の合成
+
+`mvcgen [mkFreshN, mkFresh]` のように定義を入れ子にして展開する方法は、かなり大ざっぱですが、小さなプログラムに対しては有効です。
+より合成的な方法としては、各モナディック関数ごとに個別の仕様補題を作成することです。
+これらの補題は、`mvcgen` への引数として渡すこともできますし、`@[spec]` 補題を用いて、仕様のグローバル（あるいはスコープ付き、ローカル）データベースに登録することもできます。
+-/
+
+/-- mkFresh は
+
+1. 今のカウンタ値を返す
+2. カウンタをインクリメントする
+-/
+@[spec]
+theorem mkFresh_spec (c : Nat) : ⦃fun state => ⌜state.counter = c⌝⦄ mkFresh ⦃⇓ r state => ⌜r = c ∧ c < state.counter⌝⦄ := by
+  -- `mkFresh` を展開して一気に片を付ける
+  mvcgen [mkFresh]
+  grind
+
+@[spec]
+theorem mkFreshN_spec (n : Nat) : ⦃⌜True⌝⦄ mkFreshN n ⦃⇓ r => ⌜r.Nodup⌝⦄ := by
+  -- `mkFresh_spec` が `@[spec]` で登録されていなければ `mvcgen [mkFreshN, mkFresh_spec]` とする
+  mvcgen [mkFreshN]
+  -- 先と同様
+  case inv1 => exact ⇓⟨xs, acc⟩ state => ⌜(∀ x ∈ acc, x < state.counter) ∧ acc.toList.Nodup⌝
+  all_goals mleave; grind
+
+theorem mkFreshN_correct₂ {s : Supply} (n : Nat) : ((mkFreshN n).run' s).Nodup :=
+  -- `mkFreshN` の型 `⦃⌜True⌝⦄ mkFreshN n ⦃⇓ r => ⌜r.Nodup⌝⦄` は
+  -- `∀ (n : Nat) (s : Supply), True → ((mkFreshN n).run' s).Nodup` と定義的等価
+  mkFreshN_spec n s True.intro
+
+/-
+ここでの記法 `⦃fun state => ⌜state.counter = c⌝⦄ mkFresh ⦃⇓ r state => ⌜r = c ∧ c < state.counter⌝⦄` は、Hoare 三つ組（cf. Std.Do.Triple）を表している。
+モナディック関数の仕様は、常にこのような Hoare 三つ組の結果型を持つ。
 -/

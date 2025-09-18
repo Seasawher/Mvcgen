@@ -4,8 +4,6 @@ open Lake DSL
 package «Lean Book» where
   -- add package configuration options here
   leanOptions := #[
-    ⟨`autoImplicit, false⟩,
-    ⟨`relaxedAutoImplicit, false⟩
   ]
 
 @[default_target]
