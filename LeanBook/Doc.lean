@@ -257,3 +257,79 @@ theorem mkFreshN_correct₂ {s : Supply} (n : Nat) : ((mkFreshN n).run' s).Nodup
 ここでの記法 `⦃fun state => ⌜state.counter = c⌝⦄ mkFresh ⦃⇓ r state => ⌜r = c ∧ c < state.counter⌝⦄` は、Hoare 三つ組（cf. Std.Do.Triple）を表している。
 モナディック関数の仕様は、常にこのような Hoare 三つ組の結果型を持つ。
 -/
+
+/- ### Hoare 三つ組
+
+ホーア三つ組 `⦃P⦄ prog ⦃Q⦄` は、「状態に対して前提条件 P が成り立つならば、モナディックプログラム prog を実行した後には後提条件 Q が成り立つ」という意味です。
+したがって、`mkFresh` の仕様定理は次のように述べられます：
+
+> もし `c` が `Supply` の事前状態（prestate）のカウンタフィールドを表しているなら、`mkFresh` を実行すると戻り値として `c` を返し、事後状態（poststate）のカウンタを `c` より大きい値に更新します。
+
+この仕様は「情報を捨てている（lossy）」ことに注意してください。
+`mkFresh` は状態を任意の非負の量だけ増加させても、依然としてこの仕様を満たします。
+これは望ましい性質です。なぜなら、仕様は興味のない実装の詳細を抽象化できるため、堅牢で小さな証明を保つことができるからです。
+
+ホーア三つ組は、状態付き述語の論理と、モナディックプログラムをその論理に翻訳する「最弱事前条件」意味論 `wp⟦·⟧` に基づいて定義されます。
+
+```lean
+def Triple [WP m ps] {α : Type u} (x : m α) (P : Assertion ps) (Q : PostCond α ps) : Prop :=
+  P ⊢ₛ wp⟦x⟧ Q
+```
+-/
+--#--
+/--
+info: def Std.Do.Triple.{u, v} : {m : Type u → Type v} →
+  {ps : PostShape} → [WP m ps] → {α : Type u} → m α → Assertion ps → PostCond α ps → Prop :=
+fun {m} {ps} [WP m ps] {α} x P Q => P ⊢ₛ wp⟦x⟧ Q
+-/
+#guard_msgs in
+#print Triple
+--#--
+/-
+`WP` 型クラスはモナド `m` をその `ps : PostShape` に対応付けます。この `PostShape` が、ホーア三つ組の具体的な形を決定します。
+`StateT`、`ReaderT`、`ExceptT` などの標準的なモナド変換子の多くには、標準的な（canonical）`WP` インスタンスが付属しています。
+
+たとえば、`StateT σ` には、すべての主張（Assertion）に対して `σ` 引数を追加する `WP` インスタンスがあります。
+状態付き含意 `⊢ₛ` は、これらの追加された `σ` 引数に対して η 展開されます。
+
+`StateM` プログラムに関しては、次の型がホーア三つ組 `Triple` と定義的等価になります。
+-/
+
+def Triple' {α σ : Type u} (x : StateM σ α) (P : σ → ULift Prop) (Q : (α → σ → ULift Prop) × PUnit) : Prop :=
+  ∀ s, (P s).down → let (a, s') := x.run s; (Q.1 a s').down
+
+example : @Triple' α σ = Triple (m := StateM σ) := rfl
+
+/-
+一般的な後提条件記法 `⇓ r => ...` は、型 `α → Assertion ps` の主張を `PostCond ps` へと埋め込みます。
+`StateM` の場合は、これを空のタプル `PUnit.unit` と結合して実現します。
+
+例外が加わると、後提条件の形はさらに興味深いものになります。
+
+記法 `⌜p⌝` は、純粋な仮定 `p : Prop` を状態付き主張（stateful assertion）へと埋め込みます。
+逆に、任意の状態付き仮定 `h : Assertion ps` が、ある `p : Prop` に対して `⌜p⌝` と同値であるとき、それを「純粋（pure）」と呼びます。
+
+純粋な状態付き仮定は、通常の Lean のコンテキストと自由に行き来させることができます。
+（これを手動で行うには、`mpure` タクティックを使います。）
+
+#### 純粋な前提条件とフレーム規則の概念に関する進んだ補足
+
+この小節は少し脇道にそれる内容なので、初読では飛ばしてかまいません。
+
+Aeneas に着想を得たモナディックな加算関数 `x +? y : M UInt8` の仕様が「加算がオーバーフローしない」、すなわち `h : x.toNat + y.toNat ≤ UInt8.size` を要件として課すとします。
+この要件は、仕様の通常の Lean の仮定（`add_spec_hyp`）としてエンコードすべきでしょうか？ それとも、`⌜·⌝` 記法を用いて、ホーア三つ組の純粋な前提条件（`add_spec_pre`）としてエンコードすべきでしょうか？
+
+```lean
+theorem add_spec_hyp (x y : UInt8) (h : x.toNat + y.toNat ≤ UInt8.size) :
+    ⦃⌜True⌝⦄ x +? y ⦃⇓ r => ⌜r.toNat = x.toNat + y.toNat⌝⦄ := sorry
+
+theorem add_spec_pre (x y : UInt8) :
+    ⦃⌜x.toNat + y.toNat ≤ UInt8.size⌝⦄ x +? y ⦃⇓ r => ⌜r.toNat = x.toNat + y.toNat⌝⦄ := sorry
+```
+
+第一のアプローチを勧めます。もっとも、実際上は差が出ないはずです。
+VC 生成器（Verification Condition generator）は、純粋な仮定を状態付きコンテキストから通常の Lean のコンテキストへ移動させるため、第二の形式は事実上、第一の形式へと変換されます。
+これは「仮定のフレーミング（framing hypotheses）」と呼ばれます（`mpure` および `mframe` タクティック参照）。
+
+Lean のコンテキスト内にある仮定は、状態付き論理における不変のフレーム（immutable frame）の一部です。というのも、状態付き仮定と異なり、これらは帰結規則（rule of consequence）を適用しても保持されるからです。
+-/
