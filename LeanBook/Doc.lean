@@ -333,3 +333,50 @@ VC 生成器（Verification Condition generator）は、純粋な仮定を状態
 
 Lean のコンテキスト内にある仮定は、状態付き論理における不変のフレーム（immutable frame）の一部です。というのも、状態付き仮定と異なり、これらは帰結規則（rule of consequence）を適用しても保持されるからです。
 -/
+
+/- ### モナドトランスフォーマー
+
+実際のプログラムでは、しばしば複数の独立したサブシステム間の相互作用を、モナド変換子のスタックを通じて調整します。
+これを示すために、先ほどの例を少し改変してみましょう。
+
+`mkFresh` が、任意の基底モナド `m` の上にある `StateT Supply` でも動作するように一般化されているとします。
+さらに、`mkFreshN` が具体的なモナド変換子スタック `AppM` の上で定義され、`mkFresh` を `AppM` に持ち上げて使用するとします。
+
+このとき、`mvcgen` に基づく証明は変更なしでそのまま通用します。
+-/
+namespace MonadTrans --#
+
+def mkFresh [Monad m] : StateT Supply m Nat := do
+  let n ← (·.counter) <$> get
+  modify (fun s => {s with counter := s.counter + 1})
+  pure n
+
+abbrev AppM := StateT Bool (StateT Supply (ReaderM String))
+abbrev liftCounterM : StateT Supply (ReaderM String) α → AppM α := liftM
+
+def mkFreshN (n : Nat) : AppM (List Nat) := do
+  let mut acc := #[]
+  for _ in [:n] do
+    let n ← liftCounterM mkFresh
+    acc := acc.push n
+  return acc.toList
+
+@[spec]
+theorem mkFresh_spec [Monad m] [WPMonad m ps] (c : Nat) :
+    ⦃fun state => ⌜state.counter = c⌝⦄ mkFresh (m := m) ⦃⇓ r state => ⌜r = c ∧ c < state.counter⌝⦄ := by
+  mvcgen [mkFresh]
+  grind
+
+@[spec]
+theorem mkFreshN_spec (n : Nat) : ⦃⌜True⌝⦄ mkFreshN n ⦃⇓ r => ⌜r.Nodup⌝⦄ := by
+  mvcgen [mkFreshN, liftCounterM] -- `liftCounterM` here ensures unfolding
+  case inv1 => exact ⇓⟨xs, acc⟩ _ state => ⌜(∀ n ∈ acc, n < state.counter) ∧ acc.toList.Nodup⌝
+  all_goals mleave; grind
+
+end MonadTrans --#
+/-
+`WPMonad` 型クラスは、`wp⟦·⟧` がモナド演算に対して分配する（すなわち「モナド準同型（monad morphism）」である）ことを主張します。
+
+この証明は、一見すると単一のモナドしか関わらない場合と大差ないように見えるかもしれません。
+しかし、ユーザーの目に見えないところでは、この証明は `MonadLift` インスタンスに対する一連の仕様（specification）の連鎖の上に構築されています。
+-/
