@@ -271,10 +271,10 @@ theorem mkFreshN_correct₂ {s : Supply} (n : Nat) : ((mkFreshN n).run' s).Nodup
 
 ホーア三つ組は、状態付き述語の論理と、モナディックプログラムをその論理に翻訳する「最弱事前条件」意味論 `wp⟦·⟧` に基づいて定義されます。
 
-```lean
+````lean
 def Triple [WP m ps] {α : Type u} (x : m α) (P : Assertion ps) (Q : PostCond α ps) : Prop :=
   P ⊢ₛ wp⟦x⟧ Q
-```
+````
 -/
 --#--
 /--
@@ -524,12 +524,10 @@ abbrev PostShape.args : PostShape.{u} → List (Type u)
 /--
 与えられた述語シェイプにおける `.arg` へのアサーションは次のようになります。
 
-```lean
 example : Assertion (.arg ρ .pure) = (ρ → ULift Prop) := rfl
 example : Assertion (.except ε .pure) = ULift Prop := rfl
 example : Assertion (.arg σ (.except ε .pure)) = (σ → ULift Prop) := rfl
 example : Assertion (.except ε (.arg σ .pure)) = (σ → ULift Prop) := rfl
-```
 
 これは内部的には `SPred` の略記であり、したがって `SPred` に関するすべての定理が適用されます。
 -/
@@ -551,10 +549,10 @@ Lean 4 のテストファイル [`tests/lean/run/spredProofMode.lean`](https://g
 ## さらに調べたい人へ
 
 * さらに多くの例が Lean のテストスイート内に見つかります。
-  * `tests/lean/run/doLogicTests.lean` は、多数の例を詰め込んだ「なんでも入り（kitchen sink）」テストファイルです。
-  * `tests/lean/run/bhaviksSampler.lean` は、Bhavik Mehta による大規模開発の一部を切り出したサンプルです。
-  * Markus Himmel の human-eval-lean プロジェクトには、命令的アルゴリズム実装に対する mvcgen ベースの証明がいくつか含まれています（コントリビューション歓迎とのことです！）。
-  * また、Rish Vaishnav が進めている qsort の形式化 は、現在のところ mvcgen を用いた最大規模の例です。
+  * [`tests/lean/run/doLogicTests.lean`](https://github.com/leanprover/lean4/blob/master/tests/lean/run/doLogicTests.lean) は、多数の例を詰め込んだ「なんでも入り（kitchen sink）」テストファイルです。
+  * [`tests/lean/run/bhaviksSampler.lean`](https://github.com/leanprover/lean4/blob/master/tests/lean/run/bhaviksSampler.lean) は、Bhavik Mehta による大規模開発の一部を切り出したサンプルです。
+  * Markus Himmel の [human-eval-lean](https://github.com/leanprover/human-eval-lean) プロジェクトには、命令的アルゴリズム実装に対する mvcgen ベースの証明がいくつか含まれています（コントリビューション歓迎とのことです！）。
+  * また、Rish Vaishnav が進めている [qsort の形式化](https://github.com/rish987/qsort/) は、現在のところ mvcgen を用いた最大規模の例です。
 * ぜひ次の項目のドキュメントコメントも読んでください：
   * `Std.Do.SPred`
   * `Std.Do.PostCond`
