@@ -380,3 +380,169 @@ end MonadTrans --#
 この証明は、一見すると単一のモナドしか関わらない場合と大差ないように見えるかもしれません。
 しかし、ユーザーの目に見えないところでは、この証明は `MonadLift` インスタンスに対する一連の仕様（specification）の連鎖の上に構築されています。
 -/
+
+/- ### 例外
+
+mvcgen フレームワークは拡張可能に設計されています。
+これまでに登場したどのモナドも、mvcgen にハードコードされているわけではありません。
+そうではなく、mvcgen は `WP` および `WPMonad` 型クラスのインスタンスと、ユーザーが提供する仕様に依存して、検証条件（verification conditions）を生成します。
+
+`WP` インスタンスは、モナド `m` を述語変換子 `PredTrans ps` へと写す「最弱事前条件（weakest precondition）」の解釈を定義します。
+対応する `WPMonad` インスタンスは、この変換がモナドの各操作に対して分配する（すなわちモナド準同型として振る舞う）ことを保証します。
+-/
+namespace Hidden --#
+/--
+  A weakest precondition interpretation of a monadic program `x : m α` in terms of a
+  predicate transformer `PredTrans ps α`.
+  The monad `m` determines `ps : PostShape`. See the module comment for more details.
+-/
+class WP (m : Type u → Type v) (ps : outParam PostShape.{u}) where
+  wp {α} (x : m α) : PredTrans ps α
+
+/--
+  A `WP` that is also a monad morphism, preserving `pure` and `bind`. (They all are.)
+-/
+class WPMonad (m : Type u → Type v) (ps : outParam PostShape.{u}) [Monad m]
+  extends LawfulMonad m, WP m ps where
+  wp_pure : ∀ {α} (a : α), wp (pure a) = pure a
+  wp_bind : ∀ {α β} (x : m α) (f : α → m β), wp (do let a ← x; f a) = do let a ← wp x; wp (f a)
+
+end Hidden --#
+/-
+たとえば、[Aeneas](https://github.com/AeneasVerif/aeneas) が生成したプログラムに対して検証条件を生成するために mvcgen を使いたいとします。
+Aeneas は Rust プログラムを、次の `Result` モナドを用いた Lean プログラムへと変換します。
+-/
+
+inductive Error where
+  | integerOverflow: Error
+  -- ... more error kinds ...
+
+inductive Result (α : Type u) where
+  | ok (v: α): Result α
+  | fail (e: Error): Result α
+  | div
+
+instance : Monad Result where
+  pure x := .ok x
+  bind x f := match x with
+  | .ok v => f v
+  | .fail e => .fail e
+  | .div => .div
+
+instance : LawfulMonad Result := by
+  apply LawfulMonad.mk' <;> (simp only [instMonadResult]; grind)
+
+/-
+このモナドをサポートするには、次の対応を行う必要があります。
+
+* `Result` に対する `WP` および `WPMonad` インスタンスを追加すること
+* 加算など、基本的な Rust のプリミティブに対応する変換について仕様補題（specification lemmas）を登録すること
+
+最初の部分は比較的単純です。
+-/
+
+instance Result.instWP : WP Result (.except Error .pure) where
+  wp x := match x with
+  | .ok v => wp (pure v : Except Error _)
+  | .fail e => wp (throw e : Except Error _)
+  | .div => PredTrans.const ⌜False⌝
+
+instance Result.instWPMonad : WPMonad Result (.except Error .pure) where
+  wp_pure := by intros; ext Q; simp [wp, PredTrans.pure, pure, Except.pure, Id.run]
+  wp_bind x f := by
+    simp only [instWP, bind]
+    ext Q
+    cases x <;> simp [PredTrans.bind, PredTrans.const]
+
+theorem Result.of_wp {α} {x : Result α} (P : Result α → Prop) :
+    (⊢ₛ wp⟦x⟧ post⟨fun a => ⌜P (.ok a)⌝, fun e => ⌜P (.fail e)⌝⟩) → P x := by
+  intro hspec
+  simp only [instWP] at hspec
+  split at hspec <;> simp_all
+
+/-
+上の `WP` インスタンスは、`Result α` のプログラムを `PredTrans ps α` における述語変換子へと翻訳します。
+すなわち、事後条件をその最弱事前条件へ写す、`PostCond α ps → Assertion ps` 型の関数です。
+この `WP` インスタンスの定義によって、`Result.of_wp` を介して証明済みの仕様からどのような性質を導けるかが決まる点に注意してください。
+この補題が、「最弱事前条件（weakest precondition）」の意味を定めます。
+
+第2の要素を例示するために、整数オーバーフローをモデル化する `Result` における `UInt32` の加算の例を次に示します。
+-/
+
+instance : MonadExcept Error Result where
+  throw e := .fail e
+  tryCatch x h := match x with
+  | .ok v => pure v
+  | .fail e => h e
+  | .div => .div
+
+def addOp (x y : UInt32) : Result UInt32 :=
+  if x.toNat + y.toNat ≥ UInt32.size then
+    throw .integerOverflow
+  else
+    pure (x + y)
+
+/- 登録すべき仕様補題（specification lemma）は、次の2つです。 -/
+
+@[spec]
+theorem Result.throw_spec (e : Error) :
+    ⦃Q.2.1 e⦄ throw (m := Result) (α := α) e ⦃Q⦄ := id
+
+@[spec]
+theorem addOp_noOverflow_spec (x y : UInt32) (h : x.toNat + y.toNat < UInt32.size) :
+    ⦃⌜True⌝⦄ addOp x y ⦃⇓ r => ⌜r = x + y ∧ (x + y).toNat = x.toNat + y.toNat⌝⦄ := by
+  mvcgen [addOp] <;> simp_all; try grind
+
+/- これだけで、次の例を証明するには十分です。-/
+
+example :
+  ⦃⌜True⌝⦄
+  do let mut x ← addOp 1 3
+     for _ in [:4] do
+        x ← addOp x 5
+     return x
+  ⦃⇓ r => ⌜r.toNat = 24⌝⦄ := by
+  mvcgen
+  case inv1 => exact ⇓⟨xs, x⟩ => ⌜x.toNat = 4 + 5 * xs.prefix.length⌝
+  all_goals simp_all [UInt32.size]; try grind
+
+/- ## 状態を持つゴールに対する証明モード
+
+mvcgen の優先事項のひとつは、モナディックなプログラムを人間が理解しやすい検証条件（VC）へと分解することです。
+たとえば、モナドスタックが単相（monomorphic）で、すべてのループ不変式が具体化されている場合、`all_goals mleave` の呼び出しによって `Std.Do.SPred` 固有の構成要素がすべて簡約され、`grind` でも人間でも容易に理解できる目標が残るはずです。
+
+しかし、`mleave` がすべての `Std.Do.SPred` 構成を除去できない場合もあります。
+そのような場合には、`H ⊢ₛ T` のような形の検証条件が残ります（ここで `H P : Std.Do.SPred σs`）。
+アサーション言語 `Assertion ps` は、このような `Std.Do.SPred σs` に次のように翻訳されます。
+-/
+
+abbrev PostShape.args : PostShape.{u} → List (Type u)
+  | .pure => []
+  | .arg σ s => σ :: PostShape.args s
+  | .except _ s => PostShape.args s
+
+/--
+与えられた述語シェイプにおける `.arg` へのアサーションは次のようになります。
+
+```lean
+example : Assertion (.arg ρ .pure) = (ρ → ULift Prop) := rfl
+example : Assertion (.except ε .pure) = ULift Prop := rfl
+example : Assertion (.arg σ (.except ε .pure)) = (σ → ULift Prop) := rfl
+example : Assertion (.except ε (.arg σ .pure)) = (σ → ULift Prop) := rfl
+```
+
+これは内部的には `SPred` の略記であり、したがって `SPred` に関するすべての定理が適用されます。
+-/
+abbrev Assertion (ps : PostShape.{u}) : Type u :=
+  SPred (PostShape.args ps)
+
+/-
+`H ⊢ₛ T` という形の検証条件（VC）が残る典型的なケースは、基底モナド `m` が多相（polymorphic）である場合です。
+このとき、証明は `Assertion` 言語への翻訳を制御する `WP m ps` インスタンスに依存しますが、`σs : List (Type u)` との正確な対応関係はまだ未知です。
+
+このような VC を解消するために、mvcgen には **Iris 並行分離論理（concurrent separation logic）** に着想を得た完全な証明モードが備わっています。
+（実際、この証明モードはその Lean 版クローンである [**iris-lean**](https://github.com/leanprover-community/iris-lean) から多くの部分を取り入れています。）
+
+Lean 4 のテストファイル [`tests/lean/run/spredProofMode.lean`](https://github.com/leanprover/lean4/blob/master/tests/lean/run/spredProofMode.lean) には、この証明モードの多くの例が含まれており、学習に役立ちます。
+また、リファレンスマニュアルには、利用可能な証明モードタクティクの一覧が掲載されています。
+-/
