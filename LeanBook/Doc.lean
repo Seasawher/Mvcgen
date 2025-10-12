@@ -546,3 +546,21 @@ abbrev Assertion (ps : PostShape.{u}) : Type u :=
 Lean 4 のテストファイル [`tests/lean/run/spredProofMode.lean`](https://github.com/leanprover/lean4/blob/master/tests/lean/run/spredProofMode.lean) には、この証明モードの多くの例が含まれており、学習に役立ちます。
 また、リファレンスマニュアルには、利用可能な証明モードタクティクの一覧が掲載されています。
 -/
+
+/-
+## さらに調べたい人へ
+
+* さらに多くの例が Lean のテストスイート内に見つかります。
+  * `tests/lean/run/doLogicTests.lean` は、多数の例を詰め込んだ「なんでも入り（kitchen sink）」テストファイルです。
+  * `tests/lean/run/bhaviksSampler.lean` は、Bhavik Mehta による大規模開発の一部を切り出したサンプルです。
+  * Markus Himmel の human-eval-lean プロジェクトには、命令的アルゴリズム実装に対する mvcgen ベースの証明がいくつか含まれています（コントリビューション歓迎とのことです！）。
+  * また、Rish Vaishnav が進めている qsort の形式化 は、現在のところ mvcgen を用いた最大規模の例です。
+* ぜひ次の項目のドキュメントコメントも読んでください：
+  * `Std.Do.SPred`
+  * `Std.Do.PostCond`
+  * `Std.Do.PredTrans`
+  * `Std.Do.Triple`
+  * `mvcgen` タクティク
+  * `mspec` タクティク
+  * `mintro` タクティク
+-/
