@@ -1,7 +1,7 @@
 /- # mvcgen を使って命令的プログラムの検証をする
 
-> 元記事:
-> <https://hackmd.io/@sg-fro/BJRlurP_xg>
+> この記事は Sebastian Graf さんによる記事
+> [Verifying imperative programs using mvcgen](https://hackmd.io/@sg-fro/BJRlurP_xg) の非公式日本語訳です。
 
 `mvcgen` タクティックはモナディックな検証条件生成器 (monadic verification condition generator) を実装しています。
 このタクティックは Lean の命令的な `do` 記法で書かれたプログラムを含むゴールを、純粋な検証条件の集合に分解して処理します。
